@@ -2,6 +2,8 @@
 
 A GitOps-based approval workflow for Kubernetes resources using Crossplane and ArgoCD. This system allows you to pause infrastructure changes and require manual approval before they are applied.
 
+![Approval Workflow Demo](docs/images/approval-workflow.gif)
+
 ## Overview
 
 This project demonstrates an approval workflow where:
@@ -211,6 +213,7 @@ git push
 - Custom "Approve Change" button in ArgoCD UI
 - Button is only visible on cluster-scoped XPausable resources (security best practice)
 - Uses ArgoCD's custom action framework
+- **Role-based access control**: Only users with `role:approver` or `role:admin` can execute approvals
 - Namespaced Pausable resources require kubectl approval for additional security
 
 ### 3. Annotation-Based Approval
@@ -232,6 +235,66 @@ Set a custom ArgoCD password:
 
 ```bash
 ./scripts/set-argocd-password.sh YOUR_PASSWORD
+```
+
+### Approval Permissions (RBAC)
+
+#### Option 1: Dedicated Users (Recommended)
+
+Create dedicated `approver` and `reader` users (both use same password as admin):
+
+```bash
+./scripts/create-argocd-users.sh
+```
+
+This creates:
+- **`approver` user:** Can view applications and execute "Approve Change" button
+- **`reader` user:** Can only view applications (no approvals, no other actions)
+- **Password:** Both users use the same password as admin (for convenience)
+
+**Login credentials:**
+```
+URL: https://localhost:8080
+
+Admin:    username: admin    | Full access
+Approver: username: approver | View + Approve
+Reader:   username: reader   | View only
+```
+
+**Benefits:**
+- ✅ Approve button visible ONLY to approver user
+- ✅ Reader users cannot see or execute approval actions
+- ✅ Single password for all users (same as admin)
+- ✅ Principle of least privilege
+- ✅ Clear audit trail
+
+#### Option 2: Role-Based Access (Multiple Users)
+
+Add multiple users to approver role by editing `manifests/01-argocd/argocd-users.yaml`:
+
+```yaml
+# In the policy.csv section under "Assign users to roles", add:
+g, alice, role:approver
+g, bob, role:approver
+g, devops-team, role:approver
+```
+
+**Role capabilities:**
+- `role:readonly` - Can view applications, cannot approve
+- `role:approver` - Can view and approve changes
+- `role:admin` - Full access
+
+**Apply changes:**
+```bash
+kubectl apply -f manifests/01-argocd/argocd-users.yaml
+kubectl rollout restart deployment/argocd-server -n argocd
+```
+
+**Using SSO/OIDC groups:**
+```yaml
+# Map SSO groups to roles
+g, my-company:approvers, role:approver
+g, my-company:admins, role:admin
 ```
 
 ### GitOps Repository

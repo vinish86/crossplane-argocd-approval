@@ -189,6 +189,9 @@ echo "Applying custom action configuration..."
 kubectl apply -f "$PROJECT_DIR/manifests/01-argocd/custom-action.yaml"
 
 echo ""
+echo "${YELLOW}Note: To create ArgoCD users (approver & reader), run: ./scripts/create-argocd-users.sh${NC}"
+
+echo ""
 echo "${YELLOW}Restarting ArgoCD Server to load custom actions${NC}"
 kubectl rollout restart deployment/argocd-server -n argocd
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
