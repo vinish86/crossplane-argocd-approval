@@ -29,7 +29,7 @@ spec:
           {{ $claimName := get $.observed.composite.resource.metadata.labels "crossplane.io/claim-name" }}
           {{ $annotations := .observed.composite.resource.metadata.annotations | default dict }}
           
-          {{/* Check for approval annotation on the Pausable resource itself */}}
+          {{/* Check for approval annotation on the Pausable resource */}}
           {{ $approvedHash := index $annotations "approval.example.io/approved-hash" | default "" }}
           {{ if eq $approvedHash $currentHash }}
             {{ $approvalStatus = "true" }}
@@ -37,25 +37,6 @@ spec:
             {{ $approvalVia = index $annotations "approval.example.io/approved-via" | default "unknown" }}
             {{ $approvalTimestamp = now | date "2006-01-02T15:04:05Z07:00" }}
           {{ end }}
-          
-          {{/* Also check for XApproval resources (backward compatibility) */}}
-          ---
-          apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
-          kind: ExtraResources
-          requirements:
-            xapproval:
-              apiVersion: example.io/v1alpha1
-              kind: XApproval
-          {{- with .extraResources }}
-            {{- $someExtraResources := index . "xapproval" }}
-            {{- range $someExtraResources.items }}
-              {{- if and (eq .resource.status.approvalHash $currentHash) (eq .resource.status.resourceKind "Pausable") (eq .resource.status.resourceClaimName $claimName) }}
-                {{- $approvalStatus = "true" }}
-                {{- $approvedBy = .resource.status.approvedBy | default $approvedBy }}
-                {{- $approvalTimestamp = .resource.status.approvalTimestamp | default $approvalTimestamp }}
-              {{- end }}
-            {{- end }}
-          {{- end }}
           ---
           apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
           kind: Context

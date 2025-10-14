@@ -12,22 +12,26 @@ This project demonstrates an approval workflow where:
 
 ## Architecture
 
-The system consists of three custom resource types:
+The system consists of two custom resource types:
 
 1. **Pausable** - The main resource that requires approval for changes
 2. **ChildPausable** - Child resources managed by Pausable
-3. **Approval** - Manages the approval workflow and annotations
+
+The approval workflow uses **annotations** on Pausable resources rather than separate approval objects, keeping the architecture simple and efficient.
 
 ### How It Works
 
 ```
 1. User commits change to Git → ArgoCD detects change
-2. Pausable resource gets annotation: pausable.crossplane.io/pending-change: "true"
-3. Composition blocks the change until approved
-4. User clicks "Approve Change" in ArgoCD UI
-5. Button adds annotation: pausable.crossplane.io/approved: "true"
-6. Composition applies the change
-7. Annotations are cleaned up
+2. Composition detects spec change and pauses ChildPausable resource
+3. User sees paused state in ArgoCD UI with "Approve Change" button
+4. User clicks "Approve Change" button
+5. Button adds approval annotations:
+   - approval.example.io/approved-hash: <current-hash>
+   - approval.example.io/approved-by: argocd-admin
+   - approval.example.io/approved-via: argocd-ui
+6. Composition reads annotations, verifies hash, and unpauses
+7. Change is applied to ChildPausable resource
 ```
 
 ## Prerequisites
@@ -181,13 +185,11 @@ git push
 │   │   ├── custom-action.yaml        # "Approve Change" button
 │   │   └── rbac-permissions.yaml     # ArgoCD RBAC for Pausables
 │   ├── 03-crds/            # Custom Resource Definitions
-│   │   ├── pausable-xrd.yaml
-│   │   ├── child-pausable-xrd.yaml
-│   │   └── approval-xrd.yaml
+│   │   ├── pausable-xrd.yaml         # Main Pausable XRD
+│   │   └── child-pausable-xrd.yaml   # Child resource XRD
 │   └── 04-compositions/    # Crossplane Compositions
-│       ├── pausable-composition.yaml
-│       ├── child-pausable-composition.yaml
-│       └── approval-composition.yaml
+│       ├── pausable-composition.yaml      # Main approval logic
+│       └── child-pausable-composition.yaml # Child resource composition
 ├── pause-on-change/        # Development/example resources
 ├── gitops-repo/            # Sample GitOps repository structure
 │   └── pausables/          # Store your Pausable resources here
@@ -211,9 +213,10 @@ git push
 - Uses ArgoCD's custom action framework
 
 ### 3. Annotation-Based Approval
-- `pausable.crossplane.io/pending-change: "true"` - Change pending approval
-- `pausable.crossplane.io/approved: "true"` - Change approved
-- Annotations are automatically managed by the system
+- `approval.example.io/approved-hash` - Hash of approved spec (for verification)
+- `approval.example.io/approved-by` - User who approved the change
+- `approval.example.io/approved-via` - Method of approval (e.g., argocd-ui)
+- Annotations are added by ArgoCD button and read by Crossplane composition
 
 ### 4. GitOps Compatible
 - Works seamlessly with Git-based workflows
@@ -286,22 +289,27 @@ kubectl get events --sort-by='.lastTimestamp'
 
 ### 1. Detection Phase
 When a Pausable resource is updated:
-- Crossplane composition compares current spec with status
-- If different, adds annotation: `pending-change: "true"`
-- Composition pauses and waits
+- Crossplane composition calculates hash of current spec
+- Compares with previous hash in status
+- If different, pauses the ChildPausable resource
+- Updates status with `approvalStatus: "false"`
 
 ### 2. Approval Phase
 User reviews the change in ArgoCD UI:
-- Custom action button appears on Pausable resources
-- User clicks "Approve Change"
-- Button adds annotation: `approved: "true"`
+- ArgoCD shows "Approve Change" button (only when paused)
+- User clicks the button
+- Button adds annotations:
+  - `approval.example.io/approved-hash: <spec-hash>`
+  - `approval.example.io/approved-by: argocd-admin`
+  - `approval.example.io/approved-via: argocd-ui`
 
 ### 3. Application Phase
 Composition detects approval:
-- Reads the `approved: "true"` annotation
-- Applies the pending changes
-- Cleans up approval annotations
-- Updates status to match spec
+- Reads approval annotations
+- Verifies approved-hash matches current spec hash
+- Unpauses ChildPausable resource
+- Updates status with approval metadata
+- Change is applied!
 
 ## Advanced Usage
 
@@ -310,14 +318,14 @@ Composition detects approval:
 Modify the composition to add custom approval logic:
 
 ```yaml
-# In pausable-composition.yaml
-- type: GoTemplate
-  source: Inline
-  inline:
-    template: |
-      {{ if eq .observed.composite.resource.metadata.annotations.approved "true" }}
-        # Your custom approval logic here
-      {{ end }}
+# In pausable-composition.yaml - check-approval-exist step
+# Add custom approval requirements (e.g., multiple approvers, time windows)
+{{ $approvedHash := index $annotations "approval.example.io/approved-hash" | default "" }}
+{{ $approvedBy := index $annotations "approval.example.io/approved-by" | default "" }}
+
+{{ if and (eq $approvedHash $currentHash) (eq $approvedBy "admin") }}
+  {{ $approvalStatus = "true" }}
+{{ end }}
 ```
 
 ### Multi-Environment Setup

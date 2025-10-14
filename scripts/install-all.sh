@@ -173,13 +173,11 @@ echo ""
 echo "${YELLOW}Step 6/9: Installing XRDs (Custom Resource Definitions)${NC}"
 kubectl apply -f "$PROJECT_DIR/manifests/03-crds/pausable-xrd.yaml"
 kubectl apply -f "$PROJECT_DIR/manifests/03-crds/child-pausable-xrd.yaml"
-kubectl apply -f "$PROJECT_DIR/manifests/03-crds/approval-xrd.yaml"
 
 echo ""
 echo "${YELLOW}Step 7/9: Installing Compositions${NC}"
 kubectl apply -f "$PROJECT_DIR/manifests/04-compositions/pausable-composition.yaml"
 kubectl apply -f "$PROJECT_DIR/manifests/04-compositions/child-pausable-composition.yaml"
-kubectl apply -f "$PROJECT_DIR/manifests/04-compositions/approval-composition.yaml"
 
 echo ""
 echo "${YELLOW}Step 8/9: Configuring ArgoCD RBAC and Custom Actions${NC}"
@@ -197,9 +195,9 @@ kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -
 
 echo ""
 echo "${YELLOW}Step 9/9: Verifying ArgoCD Custom Action Configuration${NC}"
-echo "✅ ArgoCD button uses annotation-based approval (no templates needed)"
-echo "✅ Button adds annotations directly to Pausable resources"
-echo "✅ Composition reads annotations and approves changes"
+echo "✅ ArgoCD button configured for Pausable resources"
+echo "✅ Approval workflow uses annotations (no separate approval resources)"
+echo "✅ Changes are paused until approved via ArgoCD UI"
 
 # Configure GitOps repository if provided
 if [ -n "$GIT_REPO_URL" ]; then
