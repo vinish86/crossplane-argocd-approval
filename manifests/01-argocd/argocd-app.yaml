@@ -7,9 +7,9 @@ spec:
   project: default
   
   source:
-    repoURL: https://github.com/vinish86/argocd-approval-demo.git
+    repoURL: https://github.com/vinish86/crossplane-argocd-approval.git
     targetRevision: main
-    path: pausables
+    path: gitops-repo/pausables
   
   destination:
     server: https://kubernetes.default.svc
