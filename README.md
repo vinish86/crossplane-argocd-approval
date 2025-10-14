@@ -28,7 +28,7 @@ The approval workflow uses **annotations** on Pausable resources rather than sep
 4. User clicks "Approve Change" button
 5. Button adds approval annotations:
    - approval.example.io/approved-hash: <current-hash>
-   - approval.example.io/approved-by: argocd-admin
+   - approval.example.io/approved-by: argocd-user
    - approval.example.io/approved-via: argocd-ui
 6. Composition reads annotations, verifies hash, and unpauses
 7. Change is applied to ChildPausable resource
@@ -209,8 +209,9 @@ git push
 
 ### 2. ArgoCD UI Integration
 - Custom "Approve Change" button in ArgoCD UI
-- Button is only visible on Pausable resources
+- Button is only visible on cluster-scoped XPausable resources (security best practice)
 - Uses ArgoCD's custom action framework
+- Namespaced Pausable resources require kubectl approval for additional security
 
 ### 3. Annotation-Based Approval
 - `approval.example.io/approved-hash` - Hash of approved spec (for verification)
