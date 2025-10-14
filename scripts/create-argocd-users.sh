@@ -69,39 +69,50 @@ else
   echo "${GREEN}✅ Port-forward started and responding${NC}"
 fi
 
-# Get admin password
-echo ""
-echo "${YELLOW}Admin Password Required${NC}"
-echo "======================="
-echo ""
+# Get admin password (can be passed as argument or environment variable)
+# Usage: create-argocd-users.sh [admin-password]
+#    or: ADMIN_PASSWORD=xxx create-argocd-users.sh
 
-# Try to get initial password first
-INITIAL_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "")
+ADMIN_PASSWORD="${1:-${ADMIN_PASSWORD:-}}"
 
-if [ -n "$INITIAL_PASSWORD" ]; then
-  echo "Found initial admin password. Try using it first."
+if [ -z "$ADMIN_PASSWORD" ]; then
+  # Password not provided - prompt user
   echo ""
-  read -p "Use initial password? (Y/n) " -n 1 -r
+  echo "${YELLOW}Admin Password Required${NC}"
+  echo "======================="
   echo ""
-  if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    ADMIN_PASSWORD="$INITIAL_PASSWORD"
+
+  # Try to get initial password first
+  INITIAL_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "")
+
+  if [ -n "$INITIAL_PASSWORD" ]; then
+    echo "Found initial admin password. Try using it first."
+    echo ""
+    read -p "Use initial password? (Y/n) " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+      ADMIN_PASSWORD="$INITIAL_PASSWORD"
+    else
+      echo ""
+      echo "Enter your current admin password:"
+      read -s ADMIN_PASSWORD
+      echo ""
+    fi
   else
+    echo "Initial password not found (might have been changed)."
     echo ""
     echo "Enter your current admin password:"
     read -s ADMIN_PASSWORD
     echo ""
   fi
-else
-  echo "Initial password not found (might have been changed)."
-  echo ""
-  echo "Enter your current admin password:"
-  read -s ADMIN_PASSWORD
-  echo ""
-fi
 
-if [ -z "$ADMIN_PASSWORD" ]; then
-  echo "${RED}No password provided!${NC}"
-  exit 1
+  if [ -z "$ADMIN_PASSWORD" ]; then
+    echo "${RED}No password provided!${NC}"
+    exit 1
+  fi
+else
+  # Password provided via argument or env var - use it silently
+  echo "${GREEN}✅ Using provided admin password${NC}"
 fi
 
 # Login as admin

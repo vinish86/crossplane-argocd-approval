@@ -189,9 +189,6 @@ echo "Applying custom action configuration..."
 kubectl apply -f "$PROJECT_DIR/manifests/01-argocd/custom-action.yaml"
 
 echo ""
-echo "${YELLOW}Note: To create ArgoCD users (approver & reader), run: ./scripts/create-argocd-users.sh${NC}"
-
-echo ""
 echo "${YELLOW}Restarting ArgoCD Server to load custom actions${NC}"
 kubectl rollout restart deployment/argocd-server -n argocd
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
@@ -329,6 +326,36 @@ fi
 
 echo ""
 echo "${GREEN}✅ Installation Complete!${NC}"
+echo ""
+
+# Prompt to create ArgoCD users (approver & reader)
+echo "${YELLOW}ArgoCD User Setup${NC}"
+echo "=================="
+echo ""
+read -p "Create ArgoCD users (approver & reader) now? (Y/n) " -n 1 -r
+echo ""
+if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+  echo ""
+  echo "${YELLOW}Creating ArgoCD users...${NC}"
+  
+  # Get the admin password to pass to create-argocd-users.sh
+  CURRENT_ADMIN_PASSWORD=""
+  if [ -n "$ARGOCD_CUSTOM_PASSWORD" ]; then
+    CURRENT_ADMIN_PASSWORD="$ARGOCD_CUSTOM_PASSWORD"
+  else
+    CURRENT_ADMIN_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "")
+  fi
+  
+  # Pass password as argument (no prompts)
+  "$SCRIPT_DIR/create-argocd-users.sh" "$CURRENT_ADMIN_PASSWORD"
+  echo ""
+  echo "${GREEN}✅ ArgoCD users created!${NC}"
+else
+  echo ""
+  echo "${YELLOW}Skipping user creation. You can create them later with:${NC}"
+  echo "  ./scripts/create-argocd-users.sh"
+fi
+
 echo ""
 echo "ArgoCD Credentials:"
 if [ -n "$ARGOCD_CUSTOM_PASSWORD" ] && [ ! -f /tmp/argocd-desired-password ]; then

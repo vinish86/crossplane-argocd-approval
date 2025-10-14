@@ -38,10 +38,48 @@ The approval workflow uses **annotations** on Pausable resources rather than sep
 
 ## Prerequisites
 
-- Kubernetes cluster (kind, minikube, or any K8s cluster)
-- kubectl configured
-- Helm 3+
-- htpasswd (optional, for custom ArgoCD password)
+### Required Tools:
+- **Kubernetes cluster** - kind, minikube, or any K8s cluster (v1.19+)
+- **kubectl** - Kubernetes CLI (v1.19+) configured and connected to your cluster
+- **Helm** - Helm 3+ for installing Crossplane
+- **Git** - For GitOps workflow (pushing changes to trigger approvals)
+- **ArgoCD CLI** - Required for user creation and password management
+  ```bash
+  # macOS
+  brew install argocd
+  
+  # Linux
+  curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+  chmod +x argocd
+  sudo mv argocd /usr/local/bin/
+  ```
+
+### Optional Tools:
+- **htpasswd** - For custom ArgoCD admin password (during installation)
+  ```bash
+  # macOS
+  brew install httpd
+  
+  # Linux
+  sudo apt-get install apache2-utils
+  ```
+- **curl** - Used by scripts for health checks (usually pre-installed)
+- **lsof** - For port checking (usually pre-installed)
+
+### Verify Prerequisites:
+
+```bash
+# Check required tools
+kubectl version --client
+helm version
+git --version
+argocd version --client
+
+# Check optional tools
+htpasswd -h 2>&1 | head -1
+curl --version
+lsof -v 2>&1 | head -1
+```
 
 ## Quick Start
 
@@ -181,11 +219,15 @@ git push
 
 ```
 .
+├── docs/
+│   └── images/
+│       └── approval-workflow.gif     # Demo GIF for README
 ├── manifests/
 │   ├── 01-argocd/          # ArgoCD configuration
 │   │   ├── argocd-app.yaml           # Application template
+│   │   ├── argocd-users.yaml         # User accounts & RBAC config
 │   │   ├── custom-action.yaml        # "Approve Change" button
-│   │   └── rbac-permissions.yaml     # ArgoCD RBAC for Pausables
+│   │   └── rbac-permissions.yaml     # K8s RBAC for ArgoCD
 │   ├── 03-crds/            # Custom Resource Definitions
 │   │   ├── pausable-xrd.yaml         # Main Pausable XRD
 │   │   └── child-pausable-xrd.yaml   # Child resource XRD
@@ -197,6 +239,7 @@ git push
 │   └── pausables/          # Store your Pausable resources here
 └── scripts/                # Automation scripts
     ├── install-all.sh               # Main installation script
+    ├── create-argocd-users.sh       # Create approver & reader users
     ├── get-argocd-password.sh       # Get ArgoCD password
     ├── set-argocd-password.sh       # Set custom password
     └── port-forward.sh              # Port-forward ArgoCD
