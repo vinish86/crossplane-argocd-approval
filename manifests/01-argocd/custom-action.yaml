@@ -27,6 +27,7 @@ data:
     - name: approve
       action.lua: |
         -- Add approval annotation directly to the Pausable resource
+        -- This allows ArgoCD to modify the resource it's viewing (PATCH works!)
         local newObj = obj
         
         -- Initialize annotations if they don't exist
@@ -34,24 +35,11 @@ data:
           newObj.metadata.annotations = {}
         end
         
-        -- Get the current user from the action context
-        -- Try multiple sources: impersonation, application context, or environment
-        local approvedBy = "unknown"
-        if impersonation ~= nil and impersonation.username ~= nil and impersonation.username ~= "" then
-          approvedBy = impersonation.username
-        elseif application ~= nil and application.status ~= nil and application.status.operationState ~= nil 
-               and application.status.operationState.operation ~= nil 
-               and application.status.operationState.operation.initiatedBy ~= nil
-               and application.status.operationState.operation.initiatedBy.username ~= nil then
-          approvedBy = application.status.operationState.operation.initiatedBy.username
-        end
-        
         -- Add approval annotations with current hash and metadata
         if obj.status ~= nil and obj.status.currentHash ~= nil then
           newObj.metadata.annotations["approval.example.io/approved-hash"] = obj.status.currentHash
-          newObj.metadata.annotations["approval.example.io/approved-by"] = approvedBy
+          newObj.metadata.annotations["approval.example.io/approved-by"] = "argocd-admin"
           newObj.metadata.annotations["approval.example.io/approved-via"] = "argocd-ui"
-          newObj.metadata.annotations["approval.example.io/approved-at"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
         end
         
         return newObj
@@ -80,24 +68,11 @@ data:
           newObj.metadata.annotations = {}
         end
         
-        -- Get the current user from the action context
-        -- Try multiple sources: impersonation, application context, or environment
-        local approvedBy = "unknown"
-        if impersonation ~= nil and impersonation.username ~= nil and impersonation.username ~= "" then
-          approvedBy = impersonation.username
-        elseif application ~= nil and application.status ~= nil and application.status.operationState ~= nil 
-               and application.status.operationState.operation ~= nil 
-               and application.status.operationState.operation.initiatedBy ~= nil
-               and application.status.operationState.operation.initiatedBy.username ~= nil then
-          approvedBy = application.status.operationState.operation.initiatedBy.username
-        end
-        
         -- Add approval annotations with current hash and metadata
         if obj.status ~= nil and obj.status.currentHash ~= nil then
           newObj.metadata.annotations["approval.example.io/approved-hash"] = obj.status.currentHash
-          newObj.metadata.annotations["approval.example.io/approved-by"] = approvedBy
+          newObj.metadata.annotations["approval.example.io/approved-by"] = "argocd-admin"
           newObj.metadata.annotations["approval.example.io/approved-via"] = "argocd-ui"
-          newObj.metadata.annotations["approval.example.io/approved-at"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
         end
         
         return newObj

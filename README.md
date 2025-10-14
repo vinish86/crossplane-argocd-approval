@@ -28,9 +28,8 @@ The approval workflow uses **annotations** on Pausable resources rather than sep
 4. User clicks "Approve Change" button
 5. Button adds approval annotations:
    - approval.example.io/approved-hash: <current-hash>
-   - approval.example.io/approved-by: <logged-in-username>
+   - approval.example.io/approved-by: argocd-admin
    - approval.example.io/approved-via: argocd-ui
-   - approval.example.io/approved-at: <timestamp>
 6. Composition reads annotations, verifies hash, and unpauses
 7. Change is applied to ChildPausable resource
 ```
@@ -215,9 +214,8 @@ git push
 
 ### 3. Annotation-Based Approval
 - `approval.example.io/approved-hash` - Hash of approved spec (for verification)
-- `approval.example.io/approved-by` - Logged-in user who approved the change
+- `approval.example.io/approved-by` - User who approved the change
 - `approval.example.io/approved-via` - Method of approval (e.g., argocd-ui)
-- `approval.example.io/approved-at` - Timestamp of approval (ISO 8601 UTC)
 - Annotations are added by ArgoCD button and read by Crossplane composition
 
 ### 4. GitOps Compatible
@@ -300,11 +298,10 @@ When a Pausable resource is updated:
 User reviews the change in ArgoCD UI:
 - ArgoCD shows "Approve Change" button (only when paused)
 - User clicks the button
-- Button captures logged-in user and adds annotations:
+- Button adds annotations:
   - `approval.example.io/approved-hash: <spec-hash>`
-  - `approval.example.io/approved-by: <logged-in-username>`
+  - `approval.example.io/approved-by: argocd-admin`
   - `approval.example.io/approved-via: argocd-ui`
-  - `approval.example.io/approved-at: <timestamp>`
 
 ### 3. Application Phase
 Composition detects approval:
