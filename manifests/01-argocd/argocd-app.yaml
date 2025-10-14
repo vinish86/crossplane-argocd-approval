@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pausable-resources
+  namespace: argocd
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/vinish86/argocd-approval-demo.git
+    targetRevision: main
+    path: pausables
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  
+  syncPolicy:
+    automated:
+      prune: true
+      # IMPORTANT: Disable self-heal to allow manual approval workflow
+      # Without this, ArgoCD will keep trying to sync changes before approval
+      selfHeal: false
+    
+    syncOptions:
+    - CreateNamespace=true
+    - PrunePropagationPolicy=foreground
+    - PruneLast=true
+    
+    # Retry failed syncs
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Optional: Add sync windows for change control
+  # syncWindows:
+  # - kind: allow
+  #   schedule: '0 9 * * 1-5'  # Allow syncs Mon-Fri 9am
+  #   duration: 8h
+  #   applications:
+  #   - pausable-resources
+

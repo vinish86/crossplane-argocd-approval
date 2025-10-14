@@ -1,0 +1,33 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: child-pausable-composition
+  labels:
+    provider: example
+spec:
+  compositeTypeRef:
+    apiVersion: example.io/v1alpha1
+    kind: XChildPausable
+  
+  mode: Pipeline
+  pipeline:
+  - step: set-status
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{ $currentSpec := .observed.composite.resource.spec }}
+          {{ $currentHash := sha256sum (toJson $currentSpec.parameters) }}
+          ---
+          apiVersion: example.io/v1alpha1
+          kind: XChildPausable
+          status:
+            currentHash: {{ $currentHash }}
+
+  - step: automatically-detect-ready-composed-resources
+    functionRef:
+      name: function-auto-ready

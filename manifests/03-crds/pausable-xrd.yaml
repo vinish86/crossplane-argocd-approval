@@ -1,0 +1,56 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xpausables.example.io
+spec:
+  group: example.io
+  names:
+    kind: XPausable
+    plural: xpausables
+  claimNames:
+    kind: Pausable
+    plural: pausables
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              parameters:
+                type: object
+                properties:
+                  value:
+                    type: string
+                  config:
+                    type: object
+                    additionalProperties: true
+                required:
+                - value
+            required:
+            - parameters
+          status:
+            type: object
+            properties:
+              conditions:
+                type: array
+                items:
+                  type: object
+              currentHash:
+                type: string
+              previousHash:
+                type: string
+                default: initialValue
+              approvalStatus:
+                type: string
+              approvedBy:
+                type: string
+              approvalTimestamp:
+                type: string
+              lastApprovedHash:
+                type: string
+

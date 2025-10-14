@@ -1,0 +1,132 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: pausable-composition
+  labels:
+    provider: example
+spec:
+  compositeTypeRef:
+    apiVersion: example.io/v1alpha1
+    kind: XPausable
+  
+  mode: Pipeline
+  pipeline:
+  - step: check-approval-exist
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{ $currentSpec := .observed.composite.resource.spec }}
+          {{ $currentHash := sha256sum (toJson $currentSpec.parameters) }}
+          {{ $approvalStatus := "false" }}
+          {{ $approvedBy := "" }}
+          {{ $approvalTimestamp := "" }}
+          {{ $approvalVia := "" }}
+          {{ $claimName := get $.observed.composite.resource.metadata.labels "crossplane.io/claim-name" }}
+          {{ $annotations := .observed.composite.resource.metadata.annotations | default dict }}
+          
+          {{/* Check for approval annotation on the Pausable resource itself */}}
+          {{ $approvedHash := index $annotations "approval.example.io/approved-hash" | default "" }}
+          {{ if eq $approvedHash $currentHash }}
+            {{ $approvalStatus = "true" }}
+            {{ $approvedBy = index $annotations "approval.example.io/approved-by" | default "unknown" }}
+            {{ $approvalVia = index $annotations "approval.example.io/approved-via" | default "unknown" }}
+            {{ $approvalTimestamp = now | date "2006-01-02T15:04:05Z07:00" }}
+          {{ end }}
+          
+          {{/* Also check for XApproval resources (backward compatibility) */}}
+          ---
+          apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+          kind: ExtraResources
+          requirements:
+            xapproval:
+              apiVersion: example.io/v1alpha1
+              kind: XApproval
+          {{- with .extraResources }}
+            {{- $someExtraResources := index . "xapproval" }}
+            {{- range $someExtraResources.items }}
+              {{- if and (eq .resource.status.approvalHash $currentHash) (eq .resource.status.resourceKind "Pausable") (eq .resource.status.resourceClaimName $claimName) }}
+                {{- $approvalStatus = "true" }}
+                {{- $approvedBy = .resource.status.approvedBy | default $approvedBy }}
+                {{- $approvalTimestamp = .resource.status.approvalTimestamp | default $approvalTimestamp }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+          ---
+          apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+          kind: Context
+          data:
+            approvalStatus: {{ $approvalStatus }}
+            approvedBy: {{ $approvedBy }}
+            approvalTimestamp: {{ $approvalTimestamp }}
+            approvalVia: {{ $approvalVia }}
+
+  - step: pause-on-change
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{ $currentSpec := .observed.composite.resource.spec }}
+          {{ $currentHash := sha256sum (toJson $currentSpec.parameters) }}
+          {{- $previousHash := .observed.composite.resource.status.previousHash }}
+          {{- $lastApprovedHash := .observed.composite.resource.status.lastApprovedHash }}
+          {{ $resource := .observed.composite.resource }}
+          {{ $approvalStatus := default "false" $.context.approvalStatus | toString }}
+          {{ $approvedBy := default "" $.context.approvedBy | toString }}
+          {{ $approvalTimestamp := default "" $.context.approvalTimestamp | toString }}
+
+          {{/* Note: We don't clear annotations here - composition just won't recognize old hash */}}
+          ---
+          apiVersion: example.io/v1alpha1
+          kind: XChildPausable
+          metadata:
+            name: {{ $resource.metadata.name }}
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: {{ $resource.metadata.name }}
+              gotemplating.fn.crossplane.io/ready: "True"
+          {{ if and (ne $previousHash "initialValue") (ne $currentHash $previousHash) (eq $approvalStatus "false") }}
+              crossplane.io/paused: "true"
+          {{ end }}
+          spec:
+            parameters:
+              value: {{ $currentSpec.parameters.value }}
+              {{ if $currentSpec.parameters.config }}
+              config: {{ toJson $currentSpec.parameters.config }}
+              {{ end }}
+          ---
+          apiVersion: example.io/v1alpha1
+          kind: XPausable
+          status:
+            currentHash: {{ $currentHash }}
+            approvalStatus: "{{ $approvalStatus }}"
+            {{ if eq $approvalStatus "true" }}
+            previousHash: {{ $currentHash }}
+            lastApprovedHash: {{ $currentHash }}
+            approvedBy: {{ $approvedBy | quote }}
+            approvalTimestamp: {{ $approvalTimestamp | quote }}
+            {{ else if ne $previousHash "initialValue" }}
+            previousHash: {{ $previousHash }}
+            {{ if and (ne $lastApprovedHash "") (ne $lastApprovedHash $currentHash) }}
+            approvedBy: ""
+            approvalTimestamp: ""
+            lastApprovedHash: {{ $lastApprovedHash }}
+            {{ else if ne $lastApprovedHash "" }}
+            lastApprovedHash: {{ $lastApprovedHash }}
+            approvedBy: {{ .observed.composite.resource.status.approvedBy | default "" | quote }}
+            approvalTimestamp: {{ .observed.composite.resource.status.approvalTimestamp | default "" | quote }}
+            {{ end }}
+            {{ else }}
+            previousHash: {{ $currentHash }}
+            {{ end }}
+
+  - step: automatically-detect-ready-composed-resources
+    functionRef:
+      name: function-auto-ready

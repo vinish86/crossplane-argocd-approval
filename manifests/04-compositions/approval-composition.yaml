@@ -1,0 +1,49 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: approval-composition
+  labels:
+    provider: example
+spec:
+  compositeTypeRef:
+    apiVersion: example.io/v1alpha1
+    kind: XApproval
+  
+  mode: Pipeline
+  pipeline:
+  - step: approve-change
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{ $currentSpec := .observed.composite.resource.spec }}
+          {{ $targetName := $currentSpec.parameters.targetResourceName }}
+          {{ $approvalHash := $currentSpec.parameters.approvalHash }}
+          {{ $targetResourceClaimName := $currentSpec.parameters.targetResourceClaimName }}
+          {{ $metadata := .observed.composite.resource.metadata }}
+          {{ $labels := $metadata.labels }}
+          {{ $approvedBy := index $labels "approved-by" | default "system" }}
+          {{ $currentTime := now | date "2006-01-02T15:04:05Z07:00" }}
+          ---
+          apiVersion: example.io/v1alpha1
+          kind: XApproval
+          metadata:
+            labels:
+              approval-status: "approved"
+              approval-hash: {{ $approvalHash | trunc 8 | quote }}
+              approved-by: {{ $approvedBy | quote }}
+              approval-timestamp: {{ $currentTime | replace ":" "-" | quote }}
+          status:
+            approvalHash: {{ $approvalHash }}
+            resourceKind: {{ $targetName }}
+            resourceClaimName: {{ $targetResourceClaimName }}
+            approvedBy: {{ $approvedBy }}
+            approvalTimestamp: {{ $currentTime }}
+
+  - step: automatically-detect-ready-composed-resources
+    functionRef:
+      name: function-auto-ready

@@ -1,0 +1,52 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xapprovals.example.io
+spec:
+  group: example.io
+  names:
+    kind: XApproval
+    plural: xapprovals
+  claimNames:
+    kind: Approval
+    plural: approvals
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              parameters:
+                type: object
+                properties:
+                  targetResourceName:
+                    type: string
+                  approvalHash:
+                    type: string
+                  targetResourceClaimName:
+                    type: string
+                required:
+                - targetResourceName
+                - approvalHash
+                - targetResourceClaimName
+            required:
+            - parameters
+          status:
+            type: object
+            properties:
+              approvalHash:
+                type: string
+              resourceKind:
+                type: string
+              resourceClaimName:
+                type: string
+              approvedBy:
+                type: string
+              approvalTimestamp:
+                type: string
+
