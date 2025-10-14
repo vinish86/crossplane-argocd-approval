@@ -1,0 +1,13 @@
+apiVersion: example.io/v1alpha1
+kind: Pausable
+metadata:
+  name: dev-pausable1
+  namespace: default
+spec:
+  parameters:
+    value: "development-value"
+    config:
+      environment: "development"
+      region: "us-west-2"
+      debug: "true"
+
