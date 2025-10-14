@@ -10,7 +10,8 @@ data:
   # Reduce sync timeout for faster change detection (default is 3 minutes)
   timeout.reconciliation: 30s
   
-  # Custom action for cluster-scoped XPausable resources only (security best practice)  
+  # Custom actions for cluster-scoped resources only (security best practice)
+  # Custom action for cluster-scoped XPausable resources
   resource.customizations.actions.example.io_XPausable: |
     discovery.lua: |
       actions = {}
@@ -42,3 +43,4 @@ data:
         end
         
         return newObj
+
