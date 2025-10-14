@@ -7,7 +7,7 @@ spec:
   parameters:
     value: "development-value"
     config:
-      environment: "development1223weqwqw"
+      environment: "development1223weqwqwsafsdsdf"
       region: "us-west-2"
       debug: "true"
 
