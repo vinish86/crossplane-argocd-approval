@@ -1,0 +1,6 @@
+# Slack webhook EnvironmentConfig - DO NOT COMMIT
+manifests/02-providers/slack-environment-config.yaml
+
+# Keep the example file for reference
+!manifests/02-providers/slack-environment-config.yaml.example
+

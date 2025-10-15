@@ -1,0 +1,10 @@
+apiVersion: example.io/v1alpha1
+kind: SlackNotification
+metadata:
+  name: test-slack-notification43
+  namespace: default
+spec:
+  message: "Hello from Crossplane! This is a test notification."
+  channel: "#general"
+
+

@@ -43,6 +43,31 @@ else
   echo "${YELLOW}Using random password. You can get it with: ./scripts/get-argocd-password.sh${NC}"
 fi
 
+# Prompt for Slack webhook URL
+echo ""
+echo "${YELLOW}Slack Notification Configuration${NC}"
+echo "=================================="
+echo ""
+read -p "Configure Slack notifications for approval workflow? (Y/n) " -n 1 -r
+echo ""
+if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+  echo ""
+  echo "Enter your Slack webhook URL"
+  echo "Example: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX"
+  echo -n "Webhook URL (or press Enter to skip): "
+  read SLACK_WEBHOOK_URL
+  
+  if [ -n "$SLACK_WEBHOOK_URL" ]; then
+    echo "${GREEN}✅ Slack webhook will be configured${NC}"
+  else
+    echo "${YELLOW}⚠️  Skipping Slack configuration. You can configure it later.${NC}"
+    SLACK_WEBHOOK_URL=""
+  fi
+else
+  SLACK_WEBHOOK_URL=""
+  echo "${YELLOW}Skipping Slack configuration.${NC}"
+fi
+
 # Prompt for GitOps repository
 echo ""
 echo "${YELLOW}GitOps Repository Configuration${NC}"
@@ -142,45 +167,62 @@ helm upgrade --install crossplane \
   --timeout 5m
 
 echo ""
-echo "${YELLOW}Step 4/9: Installing Crossplane Functions${NC}"
-echo "Installing Go Templating Function..."
-kubectl apply -f - <<EOF
-apiVersion: pkg.crossplane.io/v1beta1
-kind: Function
-metadata:
-  name: function-go-templating
-spec:
-  package: xpkg.upbound.io/crossplane-contrib/function-go-templating:v0.11.0
-EOF
-
-echo "Installing Auto Ready Function..."
-kubectl apply -f - <<EOF
-apiVersion: pkg.crossplane.io/v1beta1
-kind: Function
-metadata:
-  name: function-auto-ready
-spec:
-  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.5.1
-EOF
+echo "${YELLOW}Step 4/10: Installing Crossplane Functions${NC}"
+kubectl apply -f "$PROJECT_DIR/manifests/05-functions/functions.yaml"
 
 echo ""
-echo "${YELLOW}Step 5/9: Waiting for Functions to be healthy${NC}"
+echo "${YELLOW}Step 5/10: Waiting for Functions to be healthy${NC}"
 echo "This may take a few minutes..."
 kubectl wait --for=condition=healthy --timeout=300s function/function-go-templating || true
 kubectl wait --for=condition=healthy --timeout=300s function/function-auto-ready || true
+kubectl wait --for=condition=healthy --timeout=300s function/function-environment-configs || true
 
 echo ""
-echo "${YELLOW}Step 6/9: Installing XRDs (Custom Resource Definitions)${NC}"
+echo "${YELLOW}Step 6/10: Installing Crossplane Providers${NC}"
+echo "Installing HTTP Provider..."
+kubectl apply -f "$PROJECT_DIR/manifests/02-providers/http-provider.yaml"
+
+echo ""
+echo "Waiting for HTTP Provider to be healthy..."
+kubectl wait --for=condition=healthy --timeout=300s provider/provider-http || true
+
+echo ""
+echo "Installing HTTP Provider Config..."
+kubectl apply -f "$PROJECT_DIR/manifests/02-providers/http-providerconfig.yaml"
+
+echo ""
+echo "Installing Slack Config (EnvironmentConfig)..."
+if [ -n "$SLACK_WEBHOOK_URL" ]; then
+  # Create EnvironmentConfig with user-provided webhook URL
+  kubectl apply -f - <<EOF
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: slack-config
+data:
+  webhookUrl: "$SLACK_WEBHOOK_URL"
+EOF
+  echo "${GREEN}✅ Slack EnvironmentConfig created${NC}"
+else
+  echo "${YELLOW}⚠️  Skipping Slack EnvironmentConfig (no webhook URL provided)${NC}"
+  echo "   You can create it later with:"
+  echo "   kubectl apply -f manifests/02-providers/slack-environment-config.yaml"
+fi
+
+echo ""
+echo "${YELLOW}Step 7/10: Installing XRDs (Custom Resource Definitions)${NC}"
 kubectl apply -f "$PROJECT_DIR/manifests/03-crds/pausable-xrd.yaml"
 kubectl apply -f "$PROJECT_DIR/manifests/03-crds/child-pausable-xrd.yaml"
+kubectl apply -f "$PROJECT_DIR/manifests/03-crds/slack-notification-xrd.yaml"
 
 echo ""
-echo "${YELLOW}Step 7/9: Installing Compositions${NC}"
+echo "${YELLOW}Step 8/10: Installing Compositions${NC}"
 kubectl apply -f "$PROJECT_DIR/manifests/04-compositions/pausable-composition.yaml"
 kubectl apply -f "$PROJECT_DIR/manifests/04-compositions/child-pausable-composition.yaml"
+kubectl apply -f "$PROJECT_DIR/manifests/04-compositions/slack-notification-composition.yaml"
 
 echo ""
-echo "${YELLOW}Step 8/9: Configuring ArgoCD RBAC and Custom Actions${NC}"
+echo "${YELLOW}Step 9/10: Configuring ArgoCD RBAC and Custom Actions${NC}"
 echo "Granting ArgoCD permissions to manage Pausable resources..."
 kubectl apply -f "$PROJECT_DIR/manifests/01-argocd/rbac-permissions.yaml"
 
@@ -194,7 +236,7 @@ kubectl rollout restart deployment/argocd-server -n argocd
 kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
 
 echo ""
-echo "${YELLOW}Step 9/9: Verifying ArgoCD Custom Action Configuration${NC}"
+echo "${YELLOW}Step 10/10: Verifying ArgoCD Custom Action Configuration${NC}"
 echo "✅ ArgoCD button configured for Pausable resources"
 echo "✅ Approval workflow uses annotations (no separate approval resources)"
 echo "✅ Changes are paused until approved via ArgoCD UI"
@@ -202,7 +244,7 @@ echo "✅ Changes are paused until approved via ArgoCD UI"
 # Configure GitOps repository if provided
 if [ -n "$GIT_REPO_URL" ]; then
   echo ""
-  echo "${YELLOW}Step 10: Configuring ArgoCD Application for GitOps${NC}"
+  echo "${YELLOW}Configuring ArgoCD Application for GitOps${NC}"
   
   # Create repository secret if credentials provided
   if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
