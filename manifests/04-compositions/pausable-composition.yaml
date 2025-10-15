@@ -108,6 +108,60 @@ spec:
             previousHash: {{ $currentHash }}
             {{ end }}
 
+  - step: send-slack-notifications
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{ $currentSpec := .observed.composite.resource.spec }}
+          {{ $currentHash := sha256sum (toJson $currentSpec.parameters) }}
+          {{ $previousHash := .observed.composite.resource.status.previousHash | default "initialValue" }}
+          {{ $resource := .observed.composite.resource }}
+          {{ $resourceName := $resource.metadata.name }}
+          {{ $approvalStatus := default "false" $.context.approvalStatus | toString }}
+          {{ $approvedBy := default "" $.context.approvedBy | toString }}
+          {{ $claimName := get $.observed.composite.resource.metadata.labels "crossplane.io/claim-name" }}
+          
+          {{/* Check if approval is required (change detected and not yet approved) */}}
+          {{ $approvalRequired := and (ne $previousHash "initialValue") (ne $currentHash $previousHash) (eq $approvalStatus "false") }}
+          
+          {{/* Check if approval was just granted */}}
+          {{ $approvalGranted := eq $approvalStatus "true" }}
+          
+          {{/* Send notification when approval is required */}}
+          {{ if $approvalRequired }}
+          ---
+          apiVersion: example.io/v1alpha1
+          kind: XSlackNotification
+          metadata:
+            name: {{ $resourceName }}-approval-needed
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: approval-needed-notification
+              gotemplating.fn.crossplane.io/ready: "True"
+          spec:
+            message: {{ printf "⚠️ *Approval Required* for `%s`\\n\\nResource: `%s`\\nChange Hash: `%s`\\n\\nPlease review and approve in ArgoCD UI." $claimName $resourceName (substr 0 8 $currentHash) | quote }}
+            channel: "#general"
+          {{ end }}
+          
+          {{/* Send notification when approval is granted */}}
+          {{ if $approvalGranted }}
+          ---
+          apiVersion: example.io/v1alpha1
+          kind: XSlackNotification
+          metadata:
+            name: {{ $resourceName }}-approved
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: approval-granted-notification
+              gotemplating.fn.crossplane.io/ready: "True"
+          spec:
+            message: {{ printf "✅ *Change Approved* for `%s`\\n\\nResource: `%s`\\nApproved by: `%s`\\nHash: `%s`\\n\\nChange is being applied now." $claimName $resourceName $approvedBy (substr 0 8 $currentHash) | quote }}
+            channel: "#general"
+          {{ end }}
+
   - step: automatically-detect-ready-composed-resources
     functionRef:
       name: function-auto-ready

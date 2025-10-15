@@ -1,0 +1,63 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: slack-notification-composition
+  labels:
+    provider: http
+spec:
+  compositeTypeRef:
+    apiVersion: example.io/v1alpha1
+    kind: XSlackNotification
+  
+  mode: Pipeline
+  pipeline:
+  - step: load-environment-configs
+    functionRef:
+      name: function-environment-configs
+    input:
+      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
+      kind: Input
+      spec:
+        environmentConfigs:
+          - type: Reference
+            ref:
+              name: slack-config
+  
+  - step: send-slack-notification
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      source: Inline
+      inline:
+        template: |
+          {{ $message := .observed.composite.resource.spec.message }}
+          {{ $name := .observed.composite.resource.metadata.name }}
+          {{ $body := printf "{\"text\":\"%s\"}" $message }}
+          {{/* Get webhook URL from EnvironmentConfig via function-environment-configs */}}
+          {{ $env := index $.context "apiextensions.crossplane.io/environment" }}
+          {{ $webhookUrl := index $env "webhookUrl" }}
+          ---
+          apiVersion: http.crossplane.io/v1alpha1
+          kind: DisposableRequest
+          metadata:
+            name: {{ $name }}-request
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: slack-request
+              gotemplating.fn.crossplane.io/ready: "True"
+          spec:
+            deletionPolicy: Delete
+            forProvider:
+              # Webhook URL from EnvironmentConfig 'slack-config'
+              # Update: kubectl edit environmentconfig slack-config
+              url: {{ $webhookUrl }}
+              method: POST
+              headers:
+                Content-Type:
+                  - application/json
+              body: {{ $body | quote }}
+  
+  - step: automatically-detect-ready-composed-resources
+    functionRef:
+      name: function-auto-ready

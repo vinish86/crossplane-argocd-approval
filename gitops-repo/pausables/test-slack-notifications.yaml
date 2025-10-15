@@ -1,0 +1,14 @@
+apiVersion: example.io/v1alpha1
+kind: Pausable
+metadata:
+  name: slack-test-app
+  namespace: default
+spec:
+  parameters:
+    value: "v1.0.0"
+    config:
+      environment: dev
+      replicas: 1
+      message: "Initial deployment"
+
+

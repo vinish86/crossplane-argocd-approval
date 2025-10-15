@@ -1,0 +1,7 @@
+apiVersion: apiextensions.crossplane.io/v1beta1
+kind: EnvironmentConfig
+metadata:
+  name: slack-config
+data:
+  # Replace with your actual Slack webhook URL
+  webhookUrl: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"

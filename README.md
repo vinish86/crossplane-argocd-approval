@@ -8,9 +8,18 @@ A GitOps-based approval workflow for Kubernetes resources using Crossplane and A
 
 This project demonstrates an approval workflow where:
 - **Changes are automatically paused** when Pausable resources are modified
+- **Slack notifications** alert teams when approval is needed
 - **ArgoCD provides a UI** with an "Approve Change" button
 - **Approvals are tracked** via Kubernetes annotations
 - **GitOps workflow** enables version-controlled infrastructure changes
+
+### Slack Notifications
+
+![Slack Approval Notifications](docs/images/slack-approval-notification.png)
+
+The system automatically sends Slack notifications when:
+- ⚠️ **Approval Required** - A change is detected and needs review
+- ✅ **Change Approved** - An approval is granted and change is being applied
 
 ## Architecture
 
@@ -93,9 +102,11 @@ Run the automated installation script:
 
 This will:
 - Install ArgoCD with approval UI button
-- Install Crossplane with required functions
+- Install Crossplane with required functions (go-templating, auto-ready, environment-configs)
+- Install HTTP Provider for Slack notifications
+- Prompt for Slack webhook URL and create EnvironmentConfig
 - Deploy Custom Resource Definitions (XRDs)
-- Deploy Compositions for approval workflow
+- Deploy Compositions with integrated Slack notifications
 - Configure ArgoCD RBAC and custom actions
 - Setup GitOps repository integration (default: https://github.com/vinish86/crossplane-argocd-approval.git)
 
@@ -228,17 +239,26 @@ git push
 │   │   ├── argocd-users.yaml         # User accounts & RBAC config
 │   │   ├── custom-action.yaml        # "Approve Change" button
 │   │   └── rbac-permissions.yaml     # K8s RBAC for ArgoCD
+│   ├── 02-providers/       # Crossplane Providers
+│   │   ├── http-provider.yaml        # HTTP provider for notifications
+│   │   ├── http-providerconfig.yaml  # HTTP provider config
+│   │   └── slack-environment-config.yaml.example # Slack webhook template
 │   ├── 03-crds/            # Custom Resource Definitions
 │   │   ├── pausable-xrd.yaml         # Main Pausable XRD
-│   │   └── child-pausable-xrd.yaml   # Child resource XRD
-│   └── 04-compositions/    # Crossplane Compositions
-│       ├── pausable-composition.yaml      # Main approval logic
-│       └── child-pausable-composition.yaml # Child resource composition
-├── pause-on-change/        # Development/example resources
+│   │   ├── child-pausable-xrd.yaml   # Child resource XRD
+│   │   └── slack-notification-xrd.yaml # Slack notification XRD
+│   ├── 04-compositions/    # Crossplane Compositions
+│   │   ├── pausable-composition.yaml      # Main approval logic with Slack
+│   │   ├── child-pausable-composition.yaml # Child resource composition
+│   │   └── slack-notification-composition.yaml # Slack notification logic
+│   └── 05-functions/       # Crossplane Functions
+│       └── functions.yaml              # All required functions
 ├── gitops-repo/            # Sample GitOps repository structure
-│   └── pausables/          # Store your Pausable resources here
+│   ├── pausables/          # Store your Pausable resources here
+│   └── slack-notifications/ # Slack notification examples
+│       └── example-notification.yaml # Sample notification
 └── scripts/                # Automation scripts
-    ├── install-all.sh               # Main installation script
+    ├── install-all.sh               # Main installation script (prompts for Slack)
     ├── create-argocd-users.sh       # Create approver & reader users
     ├── get-argocd-password.sh       # Get ArgoCD password
     ├── set-argocd-password.sh       # Set custom password
@@ -270,7 +290,54 @@ git push
 - ArgoCD syncs from Git repository
 - Manual approval required for changes (selfHeal: false)
 
+### 5. Slack Notifications
+- **Automatic approval workflow notifications** - Alerts sent when approval is needed and when changes are approved
+- Webhook URL stored in EnvironmentConfig (secure, gitignored)
+- Uses HTTP provider with DisposableRequest resources
+- Notifications include resource name, change hash, and approver information
+- Easy to configure during installation (script prompts for webhook URL)
+- Update anytime: `kubectl edit environmentconfig slack-config`
+
 ## Configuration
+
+### Slack Notifications
+
+The installation script will prompt you to configure Slack notifications. You'll need a Slack webhook URL.
+
+**Get a Slack Webhook URL:**
+1. Go to https://api.slack.com/apps
+2. Create a new app or select an existing one
+3. Enable "Incoming Webhooks"
+4. Click "Add New Webhook to Workspace"
+5. Select the channel and authorize
+6. Copy the webhook URL
+
+**During Installation:**
+The script will prompt: "Configure Slack notifications? (Y/n)"
+- Enter your webhook URL when prompted
+- The script creates an EnvironmentConfig with your URL
+- All notifications will be sent to your Slack channel
+
+**Update Webhook Later:**
+```bash
+kubectl edit environmentconfig slack-config
+# Update the webhookUrl field
+```
+
+**Skip Slack During Installation:**
+If you skip Slack configuration during installation, you can add it later:
+
+```bash
+# Create from template
+cp manifests/02-providers/slack-environment-config.yaml.example \
+   manifests/02-providers/slack-environment-config.yaml
+
+# Edit with your webhook URL
+vim manifests/02-providers/slack-environment-config.yaml
+
+# Apply
+kubectl apply -f manifests/02-providers/slack-environment-config.yaml
+```
 
 ### ArgoCD Password
 
