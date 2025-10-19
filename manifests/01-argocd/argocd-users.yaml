@@ -3,78 +3,7 @@ kind: ConfigMap
 metadata:
   name: argocd-cm
   namespace: argocd
-  labels:
-    app.kubernetes.io/name: argocd-cm
-    app.kubernetes.io/part-of: argocd
 data:
-  # Reduce sync timeout for faster change detection
-  timeout.reconciliation: 30s
-  
-  # Create dedicated users
-  # Approver user - can approve changes
+  # User accounts configuration
   accounts.approver: apiKey, login
-  accounts.approver.enabled: "true"
-  
-  # Reader user - can only view applications
   accounts.reader: apiKey, login
-  accounts.reader.enabled: "true"
-  
-  # Custom action for cluster-scoped XPausable resources
-  resource.customizations.actions.example.io_XPausable: |
-    discovery.lua: |
-      actions = {}
-      if obj.status ~= nil and obj.status.approvalStatus == "false" and obj.status.previousHash ~= nil and obj.status.previousHash ~= "initialValue" then
-        actions["approve"] = {
-          iconClass = "fa fa-check-circle",
-          displayName = "✓ Approve Change"
-        }
-      end
-      return actions
-
-    definitions:
-    - name: approve
-      action.lua: |
-        local newObj = obj
-        if newObj.metadata.annotations == nil then
-          newObj.metadata.annotations = {}
-        end
-        if obj.status ~= nil and obj.status.currentHash ~= nil then
-          newObj.metadata.annotations["approval.example.io/approved-hash"] = obj.status.currentHash
-          newObj.metadata.annotations["approval.example.io/approved-by"] = "argocd-user"
-          newObj.metadata.annotations["approval.example.io/approved-via"] = "argocd-ui"
-        end
-        return newObj
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: argocd-rbac-cm
-  namespace: argocd
-  labels:
-    app.kubernetes.io/name: argocd-rbac-cm
-    app.kubernetes.io/part-of: argocd
-data:
-  # RBAC policy - only 'approver' user can execute approval actions
-  policy.csv: |
-    # Admin role - full access
-    p, role:admin, applications, *, */*, allow
-    p, role:admin, clusters, *, *, allow
-    p, role:admin, repositories, *, *, allow
-    
-    # Approver role - can view and approve (explicit permissions for actions to work)
-    p, role:approver, applications, *, */*, allow
-    
-    # Readonly role - can only view (no approvals)
-    p, role:readonly, applications, get, */*, allow
-    
-    # Assign users to roles
-    g, approver, role:approver
-    g, reader, role:readonly
-    g, admin, role:admin
-    
-    # All other authenticated users get readonly access by default
-    g, role:authenticated, role:readonly
-  
-  # Default role for any authenticated user
-  policy.default: role:readonly
-

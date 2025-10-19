@@ -53,6 +53,10 @@ The approval workflow uses **annotations** on Pausable resources rather than sep
 - **Helm** - Helm 3+ for installing Crossplane
 - **Git** - For GitOps workflow (pushing changes to trigger approvals)
 - **ArgoCD CLI** - Required for user creation and password management
+
+### System Versions:
+- **Crossplane** - v1.17.6 (with `--enable-environment-configs` flag)
+- **ArgoCD** - v2.14.17
   ```bash
   # macOS
   brew install argocd

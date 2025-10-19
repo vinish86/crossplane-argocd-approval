@@ -1,0 +1,54 @@
+# ArgoCD ConfigMap with Crossplane Resource Tracking
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  # Include all resources for maximum visibility
+  resource.inclusions: |
+    - apiGroups:
+      - "*"
+      kinds:
+      - "*"
+      clusters:
+      - "*"
+  
+  # Don't exclude anything
+  resource.exclusions: ""
+  
+  # Track all resources even if not in git
+  resource.compareoptions: |
+    ignoreAggregatedRoles: false
+  
+  # Enable resource tracking by labels and annotations
+  application.resourceTrackingMethod: "annotation+label"
+  
+  # Simple health check for Crossplane resources
+  resource.customizations.health: |
+    hs = {}
+    if obj.status ~= nil and obj.status.conditions ~= nil then
+      for i, condition in ipairs(obj.status.conditions) do
+        if condition.type == "Ready" then
+          if condition.status == "True" then
+            hs.status = "Healthy"
+            hs.message = "Resource is ready"
+            return hs
+          elseif condition.status == "False" then
+            hs.status = "Degraded"
+            hs.message = condition.message or "Not ready"
+            return hs
+          end
+        end
+      end
+    end
+    hs.status = "Progressing"
+    hs.message = "Waiting for resource"
+    return hs
+  
+  # Define resource relationships for Crossplane resources
+  resource.customizations.knownTypeFields: |
+    - field: spec.resourceRef
+      type: core/v1/ObjectReference
+    - field: spec.claimRef
+      type: core/v1/ObjectReference

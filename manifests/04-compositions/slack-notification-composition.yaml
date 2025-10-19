@@ -9,20 +9,14 @@ spec:
     apiVersion: example.io/v1alpha1
     kind: XSlackNotification
   
+  environment:
+    environmentConfigs:
+      - type: Reference
+        ref:
+          name: slack-config
+  
   mode: Pipeline
   pipeline:
-  - step: load-environment-configs
-    functionRef:
-      name: function-environment-configs
-    input:
-      apiVersion: environmentconfigs.fn.crossplane.io/v1beta1
-      kind: Input
-      spec:
-        environmentConfigs:
-          - type: Reference
-            ref:
-              name: slack-config
-  
   - step: send-slack-notification
     functionRef:
       name: function-go-templating
@@ -35,9 +29,8 @@ spec:
           {{ $message := .observed.composite.resource.spec.message }}
           {{ $name := .observed.composite.resource.metadata.name }}
           {{ $body := printf "{\"text\":\"%s\"}" $message }}
-          {{/* Get webhook URL from EnvironmentConfig via function-environment-configs */}}
-          {{ $env := index $.context "apiextensions.crossplane.io/environment" }}
-          {{ $webhookUrl := index $env "webhookUrl" }}
+          {{/* Get webhook URL from EnvironmentConfig via built-in environment configs */}}
+          {{ $webhookUrl := index $.context "apiextensions.crossplane.io/environment" "webhookUrl" }}
           ---
           apiVersion: http.crossplane.io/v1alpha1
           kind: DisposableRequest
@@ -49,7 +42,7 @@ spec:
           spec:
             deletionPolicy: Delete
             forProvider:
-              # Webhook URL from EnvironmentConfig 'slack-config'
+              # Webhook URL from EnvironmentConfig 'slack-config' (built-in environment configs)
               # Update: kubectl edit environmentconfig slack-config
               url: {{ $webhookUrl }}
               method: POST

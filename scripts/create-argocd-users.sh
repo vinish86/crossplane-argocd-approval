@@ -1,146 +1,175 @@
 #!/bin/bash
 
-# Script to create and configure ArgoCD approver and reader users
 set -e
 
-# Colors
+# Colors for output
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-echo "${YELLOW}Creating ArgoCD Users (approver & reader)${NC}"
-echo "=========================================="
-echo ""
+echo "👥 ArgoCD User Management"
+echo "========================"
 
-# Check if argocd CLI is installed
-if ! command -v argocd &> /dev/null; then
-  echo "${RED}Error: argocd CLI not found. Please install it:${NC}"
-  echo ""
-  echo "macOS: brew install argocd"
-  echo "Linux: curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64"
-  echo "       chmod +x argocd && sudo mv argocd /usr/local/bin/"
-  echo ""
+# Check if ArgoCD is installed
+if ! kubectl get namespace argocd &> /dev/null; then
+  echo "${RED}❌ ArgoCD namespace 'argocd' not found. Please install ArgoCD first.${NC}"
   exit 1
 fi
+
+# Check if ArgoCD server is ready
+if ! kubectl wait --for=condition=available --timeout=10s deployment/argocd-server -n argocd &> /dev/null; then
+  echo "${RED}❌ ArgoCD server is not ready. Please check your ArgoCD installation.${NC}"
+  exit 1
+fi
+
+# Check if ArgoCD CLI is available
+if ! command -v argocd &> /dev/null; then
+  echo "${RED}❌ ArgoCD CLI not found.${NC}"
+  echo ""
+  echo "Please install ArgoCD CLI:"
+  echo "  macOS: brew install argocd"
+  echo "  Linux: curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64"
+  echo "         chmod +x argocd && sudo mv argocd /usr/local/bin/"
+  echo ""
+  exit 1
+else
+  echo "${GREEN}✅ ArgoCD CLI is available${NC}"
+fi
+
+echo "${GREEN}✅ ArgoCD is installed and ready${NC}"
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Apply the configuration
-echo "${YELLOW}Applying ArgoCD users configuration...${NC}"
-kubectl apply -f "$PROJECT_DIR/manifests/01-argocd/argocd-users.yaml"
-
-echo ""
-echo "${YELLOW}Restarting ArgoCD server to pick up new accounts...${NC}"
-kubectl rollout restart deployment/argocd-server -n argocd
-kubectl rollout status deployment/argocd-server -n argocd --timeout=2m
-
-echo ""
-echo "${YELLOW}Waiting for accounts to be available...${NC}"
-sleep 10
-
-# Port-forward management
-echo "${YELLOW}Checking port-forward...${NC}"
-PF_STARTED=false
-
-# Check if port-forward is actually working (not just port in use)
-if curl -k https://localhost:8080 &>/dev/null || curl -k https://localhost:8080/healthz &>/dev/null; then
-  echo "${GREEN}✅ Port-forward already running and responding${NC}"
-else
-  echo "${YELLOW}Starting port-forward...${NC}"
-  # Kill any stale process on port 8080
-  lsof -ti :8080 | xargs kill -9 2>/dev/null || true
-  sleep 1
-  
-  # Start new port-forward
-  kubectl port-forward svc/argocd-server -n argocd 8080:443 > /tmp/argocd-port-forward.log 2>&1 &
-  PF_PID=$!
-  PF_STARTED=true
-  
-  # Wait and verify it's responding
-  sleep 5
-  if ! curl -k https://localhost:8080 &>/dev/null; then
-    echo "${RED}Error: Port-forward not responding${NC}"
-    echo "Try running manually: ./scripts/port-forward.sh"
-    exit 1
-  fi
-  echo "${GREEN}✅ Port-forward started and responding${NC}"
-fi
-
-# Get admin password (can be passed as argument or environment variable)
-# Usage: create-argocd-users.sh [admin-password]
-#    or: ADMIN_PASSWORD=xxx create-argocd-users.sh
-
-ADMIN_PASSWORD="${1:-${ADMIN_PASSWORD:-}}"
+# Get admin password (can be passed as argument or prompted)
+ADMIN_PASSWORD="$1"
 
 if [ -z "$ADMIN_PASSWORD" ]; then
-  # Password not provided - prompt user
+  echo "Please enter the current ArgoCD admin password:"
+  read -s ADMIN_PASSWORD
   echo ""
-  echo "${YELLOW}Admin Password Required${NC}"
-  echo "======================="
-  echo ""
-
-  # Try to get initial password first
-  INITIAL_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "")
-
-  if [ -n "$INITIAL_PASSWORD" ]; then
-    echo "Found initial admin password. Try using it first."
-    echo ""
-    read -p "Use initial password? (Y/n) " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-      ADMIN_PASSWORD="$INITIAL_PASSWORD"
-    else
-      echo ""
-      echo "Enter your current admin password:"
-      read -s ADMIN_PASSWORD
-      echo ""
-    fi
-  else
-    echo "Initial password not found (might have been changed)."
-    echo ""
-    echo "Enter your current admin password:"
-    read -s ADMIN_PASSWORD
-    echo ""
-  fi
-
+  
   if [ -z "$ADMIN_PASSWORD" ]; then
-    echo "${RED}No password provided!${NC}"
+    echo "${RED}❌ Admin password is required to create users.${NC}"
     exit 1
   fi
 else
-  # Password provided via argument or env var - use it silently
   echo "${GREEN}✅ Using provided admin password${NC}"
 fi
 
-# Login as admin
-echo "${YELLOW}Logging in as admin...${NC}"
-argocd login localhost:8080 --username admin --password "$ADMIN_PASSWORD" --insecure
-
-# Use admin password for both users (same password as admin)
-USER_PASSWORD="$ADMIN_PASSWORD"
-
-echo ""
-echo "${YELLOW}Setting password for 'approver' user...${NC}"
-argocd account update-password \
-  --account approver \
-  --current-password "$ADMIN_PASSWORD" \
-  --new-password "$USER_PASSWORD" || {
-    echo "${RED}Failed to set approver password. Account may not be ready yet.${NC}"
-    exit 1
+# Apply the user configuration using kubectl patch (argocd-cm already exists)
+echo "Applying base user configuration using kubectl patch..."
+echo "Note: Using kubectl patch because argocd-cm already exists from ArgoCD installation"
+kubectl patch configmap argocd-cm -n argocd --type merge -p '{
+  "data": {
+    "accounts.approver": "apiKey, login",
+    "accounts.reader": "apiKey, login"
   }
+}'
 
-echo ""
-echo "${YELLOW}Setting password for 'reader' user...${NC}"
-argocd account update-password \
-  --account reader \
-  --current-password "$ADMIN_PASSWORD" \
-  --new-password "$USER_PASSWORD" || {
-    echo "${RED}Failed to set reader password. Account may not be ready yet.${NC}"
+# Apply RBAC policies using the YAML file
+echo "Applying RBAC policies from YAML file..."
+kubectl apply -f "$PROJECT_DIR/manifests/01-argocd/argocd-rbac-cm.yaml"
+
+# Restart ArgoCD server to pick up new accounts
+echo "Restarting ArgoCD server to pick up new accounts..."
+kubectl rollout restart deployment/argocd-server -n argocd
+kubectl rollout status deployment/argocd-server -n argocd --timeout=2m
+
+echo "Waiting for accounts to be available..."
+sleep 10
+
+# Port-forward ArgoCD server for CLI access
+echo "Setting up port-forward for ArgoCD CLI..."
+
+# Check if port 8080 is already in use and clean it up
+ARGOCD_PORT=8080
+if lsof -ti :8080 >/dev/null 2>&1; then
+  echo "Port 8080 is already in use. Cleaning up existing port-forward..."
+  lsof -ti :8080 | xargs kill -9 2>/dev/null || true
+  sleep 2
+  
+  # Check if port is still in use after cleanup
+  if lsof -ti :8080 >/dev/null 2>&1; then
+    echo "Port 8080 still in use. Trying alternative port 8081..."
+    ARGOCD_PORT=8081
+    if lsof -ti :8081 >/dev/null 2>&1; then
+      echo "Port 8081 also in use. Cleaning up..."
+      lsof -ti :8081 | xargs kill -9 2>/dev/null || true
+      sleep 2
+    fi
+  fi
+fi
+
+# Start port-forward
+echo "Starting port-forward on port $ARGOCD_PORT..."
+kubectl port-forward svc/argocd-server -n argocd $ARGOCD_PORT:443 &
+PORT_FORWARD_PID=$!
+
+# Wait for port-forward to be ready and verify it's working
+sleep 5
+if ! curl -k https://localhost:$ARGOCD_PORT/healthz >/dev/null 2>&1; then
+  echo "Waiting for port-forward to be ready..."
+  sleep 5
+  if ! curl -k https://localhost:$ARGOCD_PORT/healthz >/dev/null 2>&1; then
+    echo "${RED}❌ Port-forward failed to start properly${NC}"
+    kill $PORT_FORWARD_PID 2>/dev/null || true
     exit 1
-  }
+  fi
+fi
+echo "${GREEN}✅ Port-forward is ready on port $ARGOCD_PORT${NC}"
+
+# Login as admin first
+echo "Logging in as admin..."
+if argocd login localhost:$ARGOCD_PORT --username admin --password "$ADMIN_PASSWORD" --insecure; then
+  echo "${GREEN}✅ Successfully logged in as admin${NC}"
+  
+  # Set password for approver user
+  echo "Setting password for approver user..."
+  if argocd account update-password --account approver --current-password "$ADMIN_PASSWORD" --new-password "$ADMIN_PASSWORD"; then
+    echo "${GREEN}✅ Approver password set successfully${NC}"
+  else
+    echo "${RED}❌ Failed to set approver password${NC}"
+    kill $PORT_FORWARD_PID 2>/dev/null || true
+    exit 1
+  fi
+  
+  # Set password for reader user
+  echo "Setting password for reader user..."
+  if argocd account update-password --account reader --current-password "$ADMIN_PASSWORD" --new-password "$ADMIN_PASSWORD"; then
+    echo "${GREEN}✅ Reader password set successfully${NC}"
+  else
+    echo "${RED}❌ Failed to set reader password${NC}"
+    kill $PORT_FORWARD_PID 2>/dev/null || true
+    exit 1
+  fi
+  
+  echo "${GREEN}✅ Users configured successfully${NC}"
+else
+  echo "${RED}❌ Failed to login via ArgoCD CLI${NC}"
+  kill $PORT_FORWARD_PID 2>/dev/null || true
+  exit 1
+fi
+
+# Stop port-forward
+echo "Cleaning up port-forward..."
+if [ -n "$PORT_FORWARD_PID" ] && ps -p $PORT_FORWARD_PID > /dev/null 2>&1; then
+  kill $PORT_FORWARD_PID 2>/dev/null || true
+  echo "${GREEN}✅ Port-forward stopped${NC}"
+else
+  # Fallback: kill any process using port 8080
+  lsof -ti :8080 | xargs kill -9 2>/dev/null || true
+  echo "${YELLOW}Port-forward already stopped${NC}"
+fi
+
+# Restart ArgoCD server to pick up new users
+echo "Restarting ArgoCD server..."
+kubectl rollout restart deployment argocd-server -n argocd
+
+echo "Waiting for ArgoCD server to be ready..."
+kubectl rollout status deployment argocd-server -n argocd
 
 echo ""
 echo "${GREEN}✅ Users created successfully!${NC}"
@@ -149,38 +178,23 @@ echo "User Credentials (all use the same password as admin):"
 echo "=========================================================="
 echo ""
 echo "Admin User:"
-echo "  URL: https://localhost:8080"
+echo "  URL: https://localhost:$ARGOCD_PORT"
 echo "  Username: admin"
 echo "  Password: $ADMIN_PASSWORD"
 echo ""
 echo "Approver User (can view & approve changes):"
-echo "  URL: https://localhost:8080"
+echo "  URL: https://localhost:$ARGOCD_PORT"
 echo "  Username: approver"
-echo "  Password: $USER_PASSWORD"
+echo "  Password: $ADMIN_PASSWORD"
 echo ""
 echo "Reader User (can only view, no approve):"
-echo "  URL: https://localhost:8080"
+echo "  URL: https://localhost:$ARGOCD_PORT"
 echo "  Username: reader"
-echo "  Password: $USER_PASSWORD"
+echo "  Password: $ADMIN_PASSWORD"
 echo ""
 echo "${YELLOW}User Permissions:${NC}"
 echo "  - admin: Full access to everything"
 echo "  - approver: Can view applications and approve changes"
 echo "  - reader: Can only view applications (no approvals)"
 echo ""
-
-# Cleanup: Kill port-forward if we started it
-if [ "$PF_STARTED" = true ]; then
-  echo ""
-  echo "${YELLOW}Cleaning up port-forward...${NC}"
-  if [ -n "$PF_PID" ] && ps -p $PF_PID > /dev/null 2>&1; then
-    kill $PF_PID 2>/dev/null || true
-    echo "${GREEN}✅ Port-forward stopped${NC}"
-  else
-    echo "${YELLOW}Port-forward already stopped${NC}"
-  fi
-  echo ""
-  echo "${YELLOW}💡 To access ArgoCD UI, run: ./scripts/port-forward.sh${NC}"
-  echo ""
-fi
-
+echo "${YELLOW}💡 To access ArgoCD UI, run: ./scripts/port-forward.sh${NC}"

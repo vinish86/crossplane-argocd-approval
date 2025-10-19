@@ -1,115 +1,120 @@
 #!/bin/bash
 
-# Script to set custom ArgoCD admin password
-
 set -e
 
-# Colors
-YELLOW='\033[1;33m'
-GREEN='\033[0;32m'
+# Colors for output
 RED='\033[0;31m'
-NC='\033[0m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-echo "🔑 Set Custom ArgoCD Admin Password"
-echo "===================================="
-echo ""
-
-# Check if password is provided
-if [ -z "$1" ]; then
-  echo "${YELLOW}Usage: $0 <new-password>${NC}"
-  echo ""
-  echo "Example: $0 MySecurePassword123!"
-  echo ""
-  echo "Or set via environment variable:"
-  echo "  ARGOCD_PASSWORD=MySecurePassword123! $0"
-  exit 1
-fi
-
-NEW_PASSWORD="${1:-$ARGOCD_PASSWORD}"
-
-if [ -z "$NEW_PASSWORD" ]; then
-  echo "${RED}Error: Password not provided${NC}"
-  exit 1
-fi
-
-echo "${YELLOW}Checking ArgoCD installation...${NC}"
+echo "🔐 ArgoCD Password Configuration"
+echo "==============================="
 
 # Check if ArgoCD is installed
-if ! kubectl get namespace argocd &>/dev/null; then
-  echo "${RED}Error: ArgoCD namespace not found. Please install ArgoCD first.${NC}"
+if ! kubectl get namespace argocd &> /dev/null; then
+  echo "${RED}❌ ArgoCD namespace 'argocd' not found. Please install ArgoCD first.${NC}"
   exit 1
 fi
 
-# Get current password
-echo "${YELLOW}Getting current ArgoCD password...${NC}"
-CURRENT_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "")
+# Check if ArgoCD server is ready
+if ! kubectl wait --for=condition=available --timeout=10s deployment/argocd-server -n argocd &> /dev/null; then
+  echo "${RED}❌ ArgoCD server is not ready. Please check your ArgoCD installation.${NC}"
+  exit 1
+fi
 
-if [ -z "$CURRENT_PASSWORD" ]; then
-  echo "${YELLOW}Initial password secret not found. Trying to use argocd CLI to update...${NC}"
+# Get password from argument or prompt
+if [ $# -eq 1 ]; then
+  NEW_PASSWORD="$1"
+  echo "Setting password from command line argument..."
+else
+  echo ""
+  echo "Enter your desired ArgoCD admin password:"
+  read -s NEW_PASSWORD
+  echo ""
+  echo "Confirm password:"
+  read -s CONFIRM_PASSWORD
+  echo ""
   
-  # Check if argocd CLI is installed
-  if ! command -v argocd &> /dev/null; then
-    echo "${RED}Error: argocd CLI not found. Please install it:${NC}"
-    echo "  brew install argocd"
-    echo "  or visit: https://argo-cd.readthedocs.io/en/stable/cli_installation/"
+  if [ "$NEW_PASSWORD" != "$CONFIRM_PASSWORD" ]; then
+    echo "${RED}❌ Passwords don't match. Exiting.${NC}"
     exit 1
   fi
-  
-  # Prompt for current password
-  echo ""
-  echo "Please enter your current ArgoCD admin password:"
-  read -s CURRENT_PASSWORD
-  echo ""
 fi
 
-echo "${YELLOW}Updating password via argocd CLI...${NC}"
-
-# Check if argocd CLI is installed
-if ! command -v argocd &> /dev/null; then
-  echo "${YELLOW}Installing argocd CLI...${NC}"
-  echo ""
-  echo "${RED}argocd CLI not found. Please install it first:${NC}"
-  echo ""
-  echo "macOS:"
-  echo "  brew install argocd"
-  echo ""
-  echo "Linux:"
-  echo "  curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64"
-  echo "  chmod +x argocd"
-  echo "  sudo mv argocd /usr/local/bin/"
-  echo ""
-  echo "Or visit: https://argo-cd.readthedocs.io/en/stable/cli_installation/"
-  echo ""
-  echo "${YELLOW}Alternative: Use kubectl to set password hash${NC}"
-  echo ""
-  echo "If you have htpasswd installed:"
-  echo "  HASH=\$(htpasswd -nbBC 10 \"\" \"$NEW_PASSWORD\" | tr -d ':\\n' | sed 's/\$2y/\$2a/')"
-  echo "  kubectl -n argocd patch secret argocd-secret -p '{\"stringData\": {\"admin.password\": \"'\$HASH'\", \"admin.passwordMtime\": \"'$(date +%FT%T%Z)'\"}}'"
+if [ -z "$NEW_PASSWORD" ]; then
+  echo "${RED}❌ Password cannot be empty.${NC}"
   exit 1
 fi
 
-# Port-forward if not already running
-if ! lsof -i :8080 &>/dev/null; then
-  echo "${YELLOW}Starting port-forward...${NC}"
-  kubectl port-forward svc/argocd-server -n argocd 8080:443 > /tmp/argocd-port-forward.log 2>&1 &
-  sleep 3
+echo ""
+echo "${YELLOW}Setting ArgoCD admin password...${NC}"
+
+# Wait for ArgoCD to be fully ready
+echo "Waiting for ArgoCD to be ready..."
+kubectl wait --for=condition=available --timeout=60s deployment/argocd-server -n argocd
+
+# Get initial password
+echo "Getting initial admin password..."
+INITIAL_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "")
+
+if [ -z "$INITIAL_PASSWORD" ]; then
+  echo "${YELLOW}⚠️  Waiting for initial password secret...${NC}"
+  sleep 10
+  INITIAL_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "")
 fi
 
-# Login and update password
-echo "${YELLOW}Logging in to ArgoCD...${NC}"
-argocd login localhost:8080 --username admin --password "$CURRENT_PASSWORD" --insecure
+if [ -z "$INITIAL_PASSWORD" ]; then
+  echo "${RED}❌ Could not get initial password secret. Please check ArgoCD installation.${NC}"
+  exit 1
+fi
 
-echo "${YELLOW}Updating password...${NC}"
-argocd account update-password --current-password "$CURRENT_PASSWORD" --new-password "$NEW_PASSWORD"
+echo "Initial password retrieved successfully."
+
+# Check if htpasswd is available
+if ! command -v htpasswd &> /dev/null; then
+  echo "${RED}❌ htpasswd command not found.${NC}"
+  echo ""
+  echo "Please install htpasswd:"
+  echo "  macOS: brew install httpd"
+  echo "  Ubuntu/Debian: sudo apt-get install apache2-utils"
+  echo "  CentOS/RHEL: sudo yum install httpd-tools"
+  echo ""
+  echo "Then run this script again."
+  exit 1
+fi
+
+# Generate bcrypt hash
+echo "Generating password hash..."
+BCRYPT_HASH=$(htpasswd -nbBC 10 "" "$NEW_PASSWORD" 2>/dev/null | tr -d ':\n' | sed 's/\$2y/\$2a/' || echo "")
+
+if [ -z "$BCRYPT_HASH" ]; then
+  echo "${RED}❌ Failed to generate password hash.${NC}"
+  exit 1
+fi
+
+# Update ArgoCD secret
+echo "Updating ArgoCD admin password..."
+kubectl -n argocd patch secret argocd-secret \
+  --type='merge' \
+  -p="{\"stringData\": {\"admin.password\": \"$BCRYPT_HASH\", \"admin.passwordMtime\": \"$(date +%FT%T%Z)\"}}"
+
+# Restart ArgoCD server to pick up new password
+echo "Restarting ArgoCD server..."
+kubectl rollout restart deployment argocd-server -n argocd
+
+echo "Waiting for ArgoCD server to be ready..."
+kubectl rollout status deployment argocd-server -n argocd
 
 echo ""
-echo "${GREEN}✅ Password updated successfully!${NC}"
+echo "${GREEN}✅ ArgoCD admin password updated successfully!${NC}"
 echo ""
-echo "New ArgoCD credentials:"
+echo "ArgoCD Login Credentials:"
 echo "  URL: https://localhost:8080"
 echo "  Username: admin"
 echo "  Password: $NEW_PASSWORD"
 echo ""
-echo "${YELLOW}Note: The password is now stored in argocd-secret ConfigMap${NC}"
-echo "      Initial password secret is no longer used."
-
+echo "To access ArgoCD UI:"
+echo "  1. Port-forward: ./scripts/port-forward.sh"
+echo "  2. Open: https://localhost:8080"
+echo "  3. Login with the credentials above"
