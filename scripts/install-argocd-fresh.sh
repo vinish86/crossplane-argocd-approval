@@ -107,7 +107,13 @@ kubectl rollout status statefulset argocd-application-controller -n argocd
 echo "${GREEN}✅ ArgoCD components restarted and ready${NC}"
 
 echo ""
-echo "${YELLOW}Step 7/8: Setting Custom Password (if provided)${NC}"
+echo "${YELLOW}Step 7/9: Configuring Custom Actions for Approval Button${NC}"
+echo "Applying custom action configuration for approval workflow..."
+kubectl patch configmap argocd-cm -n argocd --type merge --patch-file "$PROJECT_DIR/manifests/01-argocd/custom-action.yaml"
+echo "${GREEN}✅ Custom actions configured for approval button enablement${NC}"
+
+echo ""
+echo "${YELLOW}Step 8/9: Setting Custom Password (if provided)${NC}"
 if [ -n "$ARGOCD_CUSTOM_PASSWORD" ]; then
   echo "Setting custom password using working script..."
   "$SCRIPT_DIR/set-argocd-password.sh" "$ARGOCD_CUSTOM_PASSWORD"
@@ -117,7 +123,7 @@ else
 fi
 
 echo ""
-echo "${YELLOW}Step 8/8: User Management Setup${NC}"
+echo "${YELLOW}Step 9/9: User Management Setup${NC}"
 echo "Creating additional users (approver, reader) for the approval workflow..."
 echo "All users will use the same password: 'password'"
 echo ""
@@ -135,6 +141,7 @@ echo "  ✅ Cluster Admin RBAC Permissions (Full Cluster Access)"
 echo "  ✅ Advanced Crossplane Resource Tracking"
 echo "  ✅ Health Checks for Crossplane Resources"
 echo "  ✅ Resource Relationship Discovery"
+echo "  ✅ Custom Actions for Approval Button"
 echo "  ✅ Full Cluster Visibility"
 
 echo ""
@@ -168,6 +175,7 @@ echo "  ✅ Cluster Admin permissions for full cluster access"
 echo "  ✅ Advanced Crossplane resource health checks"
 echo "  ✅ Resource relationship tracking (resourceRef, claimRef)"
 echo "  ✅ Custom actions for Crossplane resource discovery"
+echo "  ✅ Approval button enablement for workflow control"
 echo "  ✅ Full cluster visibility and resource tracking"
 echo ""
 echo "To test the system:"
@@ -176,7 +184,7 @@ echo "2. View them in ArgoCD UI with health status and relationships"
 echo "3. Test resource discovery and tracking features"
 
 echo ""
-echo "${YELLOW}Step 9/9: Setting up Git Repository and Application${NC}"
+echo "${YELLOW}Step 10/10: Setting up Git Repository and Application${NC}"
 echo "====================================================="
 echo ""
 echo "Now setting up Git repository and ArgoCD application with default settings..."
@@ -202,7 +210,8 @@ else
   
   # Run the simple setup script
   "$SCRIPT_DIR/simple-argocd-setup.sh"
-  
+
+  kubectl patch configmap argocd-cm -n argocd --type merge --patch-file "$PROJECT_DIR/manifests/01-argocd/custom-action.yaml"  
   echo ""
   echo "${GREEN}✅ Complete ArgoCD setup finished!${NC}"
   echo ""

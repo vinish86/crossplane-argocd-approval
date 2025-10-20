@@ -15,29 +15,27 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Prompt for Slack webhook URL
+# Get Slack webhook URL from environment variable
 echo ""
 echo "${YELLOW}Slack Notification Configuration${NC}"
 echo "=================================="
 echo ""
-read -p "Configure Slack notifications for approval workflow? (Y/n) " -n 1 -r
-echo ""
-if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-  echo ""
-  echo "Enter your Slack webhook URL"
-  echo "Example: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX"
-  echo -n "Webhook URL (or press Enter to skip): "
-  read SLACK_WEBHOOK_URL
-  
-  if [ -n "$SLACK_WEBHOOK_URL" ]; then
-    echo "${GREEN}✅ Slack webhook will be configured${NC}"
-  else
-    echo "${YELLOW}⚠️  Skipping Slack configuration. You can configure it later.${NC}"
-    SLACK_WEBHOOK_URL=""
-  fi
+
+# Check if SLACK_WEBHOOK_URL is set in environment
+if [ -n "$SLACK_WEBHOOK_URL" ]; then
+  echo "${GREEN}✅ Slack webhook URL found in environment variable${NC}"
+  echo "  SLACK_WEBHOOK_URL: [HIDDEN]"
+  echo "${GREEN}✅ Slack notifications will be configured${NC}"
 else
+  echo "${YELLOW}⚠️  SLACK_WEBHOOK_URL environment variable not set${NC}"
+  echo ""
+  echo "To enable Slack notifications, set the environment variable:"
+  echo "  export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX'"
+  echo ""
+  echo "Then run this script again."
+  echo ""
+  echo "${YELLOW}Skipping Slack configuration for now.${NC}"
   SLACK_WEBHOOK_URL=""
-  echo "${YELLOW}Skipping Slack configuration.${NC}"
 fi
 
 echo ""

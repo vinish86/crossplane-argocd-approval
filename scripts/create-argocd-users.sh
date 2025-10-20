@@ -62,12 +62,14 @@ fi
 # Apply the user configuration using kubectl patch (argocd-cm already exists)
 echo "Applying base user configuration using kubectl patch..."
 echo "Note: Using kubectl patch because argocd-cm already exists from ArgoCD installation"
-kubectl patch configmap argocd-cm -n argocd --type merge -p '{
-  "data": {
-    "accounts.approver": "apiKey, login",
-    "accounts.reader": "apiKey, login"
-  }
-}'
+# kubectl patch configmap argocd-cm -n argocd --type merge -p '{
+#   "data": {
+#     "accounts.approver": "apiKey, login",
+#     "accounts.reader": "apiKey, login"
+#   }
+# }'
+
+kubectl patch configmap argocd-cm -n argocd --type merge --patch-file "$PROJECT_DIR/manifests/01-argocd/argocd-users.yaml"
 
 # Apply RBAC policies using the YAML file
 echo "Applying RBAC policies from YAML file..."

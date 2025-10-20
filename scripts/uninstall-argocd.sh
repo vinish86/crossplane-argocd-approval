@@ -29,9 +29,42 @@ fi
 
 echo ""
 echo "${YELLOW}Step 1/6: Removing ArgoCD Applications${NC}"
-# Delete ArgoCD applications first
+echo "Deleting all ArgoCD applications first..."
+
+# List existing applications before deletion
+echo "Current ArgoCD applications:"
+kubectl get applications -n argocd -o custom-columns="NAME:.metadata.name,REPO:.spec.source.repoURL,PATH:.spec.source.path,NAMESPACE:.spec.destination.namespace" --no-headers 2>/dev/null | while read line; do
+  if [ -n "$line" ]; then
+    echo "  📱 $line"
+  fi
+done
+
+# Delete all ArgoCD applications
+echo ""
+echo "Deleting all ArgoCD applications..."
 kubectl delete applications --all -n argocd --ignore-not-found=true || true
-echo "✅ ArgoCD Applications removed"
+
+# Wait a moment for applications to be deleted
+sleep 3
+
+# Verify applications are deleted
+REMAINING_APPS=$(kubectl get applications -n argocd --no-headers 2>/dev/null | wc -l)
+if [ "$REMAINING_APPS" -eq 0 ]; then
+  echo "${GREEN}✅ All ArgoCD applications removed successfully${NC}"
+else
+  echo "${YELLOW}⚠️  Some applications may still be present. Checking for stuck applications...${NC}"
+  
+  # Check for applications with finalizers that might be stuck
+  STUCK_APPS=$(kubectl get applications -n argocd -o jsonpath='{.items[?(@.metadata.finalizers)].metadata.name}' 2>/dev/null || echo "")
+  if [ -n "$STUCK_APPS" ]; then
+    echo "Found applications with finalizers. Attempting to remove finalizers..."
+    for app in $STUCK_APPS; do
+      echo "  Removing finalizers from application: $app"
+      kubectl patch application "$app" -n argocd --type json -p='[{"op": "remove", "path": "/metadata/finalizers"}]' 2>/dev/null || true
+    done
+    echo "${GREEN}✅ Finalizers removed from stuck applications${NC}"
+  fi
+fi
 
 echo ""
 echo "${YELLOW}Step 2/6: Removing ArgoCD Repository Secrets${NC}"
